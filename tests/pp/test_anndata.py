@@ -150,6 +150,48 @@ def test_pseudobulk(
         assert np.allclose(pbdata.X, pdata.X)
 
 
+@pytest.mark.parametrize("categorical", [False, True])
+def test_pseudobulk_rejects_ambiguous_multi_group_labels(categorical):
+    obs = pd.DataFrame(
+        {
+            "sample": ["s", "s"],
+            "type": ["CD4_T", "CD4"],
+            "state": ["activated", "T_activated"],
+        },
+        index=["c1", "c2"],
+    )
+    if categorical:
+        obs[["type", "state"]] = obs[["type", "state"]].astype("category")
+    adata = ad.AnnData(X=np.array([[10.0, 20.0], [1000.0, 2000.0]]), obs=obs)
+    original_obs = adata.obs.copy(deep=True)
+
+    with pytest.raises(ValueError, match=r"ambiguous.*CD4_T_activated"):
+        dc.pp.pseudobulk(adata, sample_col="sample", groups_col=["type", "state"])
+
+    pd.testing.assert_frame_equal(adata.obs, original_obs)
+
+
+def test_pseudobulk_preserves_unambiguous_multi_group_labels():
+    obs = pd.DataFrame(
+        {
+            "sample": ["s", "s", "s"],
+            "type": pd.Categorical(["CD4_T", "CD4_T", "CD4"]),
+            "state": pd.Categorical(["activated", "activated", "resting"]),
+        },
+        index=["c1", "c2", "c3"],
+    )
+    adata = ad.AnnData(X=np.array([[10.0, 20.0], [1.0, 2.0], [1000.0, 2000.0]]), obs=obs)
+    original_obs = adata.obs.copy(deep=True)
+
+    pdata = dc.pp.pseudobulk(adata, sample_col="sample", groups_col=["type", "state"])
+
+    assert pdata.obs_names.tolist() == ["s_CD4_T_activated", "s_CD4_resting"]
+    assert pdata.obs["type_state"].tolist() == ["CD4_T_activated", "CD4_resting"]
+    assert pdata.obs["psbulk_cells"].tolist() == [2.0, 1.0]
+    np.testing.assert_array_equal(pdata.X, [[11.0, 22.0], [1000.0, 2000.0]])
+    pd.testing.assert_frame_equal(adata.obs, original_obs)
+
+
 @pytest.mark.parametrize("inplace", [True, False])
 def test_filter_samples(
     pdata,
