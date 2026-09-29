@@ -191,7 +191,16 @@ def _sample_group_by(
         # Check if extra grouping is needed
         if type(group) is list:
             joined_cols = "_".join(group)
-            obs[joined_cols] = obs[group[0]].str.cat(obs[group[1:]].astype("U"), sep="_")
+            joined_groups = obs[group[0]].str.cat(obs[group[1:]].astype("U"), sep="_")
+            unique_groups = obs[group].drop_duplicates()
+            unique_labels = joined_groups.loc[unique_groups.index]
+            ambiguous = unique_labels[unique_labels.duplicated(keep=False)].unique()
+            if ambiguous.size:
+                raise ValueError(
+                    f"Values in groups_col={group!r} are ambiguous when joined with '_': "
+                    f"multiple group combinations map to {ambiguous.tolist()!r}."
+                )
+            obs[joined_cols] = joined_groups
             group = joined_cols
         # Filter extra columns in obs
         cols = obs.groupby([sample, group], observed=True).nunique(dropna=False).eq(other=1).all(axis=0)
